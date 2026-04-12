@@ -4,5 +4,11 @@ dist/
 coverage/
 .DS_Store
 *.log
+.idea/
+*.iml
+android/.idea/
+android/.gradle/
+android/local.properties
+android/app/release/
 .env*
 !.env.example
