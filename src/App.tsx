@@ -694,11 +694,11 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center pt-4 border-t border-white/5">
                   <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{t.setup.github || 'GitHub'}</span>
-                  <a href="https://github.com/yishin/sisyphus" target="_blank" rel="noreferrer" className="text-xs font-mono font-bold text-emerald-400 hover:text-emerald-300 transition-colors">GitHub</a>
+                  <a href="https://github.com/yishin-shen/Sisyphus" target="_blank" rel="noreferrer" className="text-xs font-mono font-bold text-emerald-400 hover:text-emerald-300 transition-colors">GitHub</a>
                 </div>
                 <div className="flex justify-between items-center pt-4 border-t border-white/5">
                   <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{settings.language === 'zh' ? '隐私政策' : 'Privacy Policy'}</span>
-                  <a href="https://github.com/yishin/sisyphus/blob/main/PRIVACY.md" target="_blank" rel="noreferrer" className="text-xs font-mono font-bold text-emerald-400 hover:text-emerald-300 transition-colors">{settings.language === 'zh' ? '阅读' : 'Read'}</a>
+                  <a href="https://github.com/yishin-shen/Sisyphus/blob/master/PRIVACY.md" target="_blank" rel="noreferrer" className="text-xs font-mono font-bold text-emerald-400 hover:text-emerald-300 transition-colors">{settings.language === 'zh' ? '阅读' : 'Read'}</a>
                 </div>
               </div>
 
