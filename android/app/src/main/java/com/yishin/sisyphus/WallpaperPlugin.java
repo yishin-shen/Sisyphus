@@ -31,13 +31,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.android.material.datepicker.MaterialDatePicker;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
-import androidx.work.ExistingPeriodicWorkPolicy;
-import androidx.work.PeriodicWorkRequest;
-import androidx.work.WorkManager;
-import androidx.work.OneTimeWorkRequest;
-import androidx.work.ExistingWorkPolicy;
-import java.util.concurrent.TimeUnit;
-import java.util.Calendar;
 import android.content.SharedPreferences;
 import android.content.Context;
 
@@ -45,6 +38,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import org.json.JSONObject;
 
 @CapacitorPlugin(name = "Wallpaper")
 public class WallpaperPlugin extends Plugin {
@@ -111,8 +105,8 @@ public class WallpaperPlugin extends Plugin {
     public void setBackgroundImage(PluginCall call) {
         String imageBase64 = call.getString("imageBase64");
         if (imageBase64 == null) {
-            SharedPreferences prefs = getContext().getSharedPreferences("HeatmapSettings", Context.MODE_PRIVATE);
-            prefs.edit().remove("backgroundImagePath").apply();
+            SharedPreferences prefs = getContext().getSharedPreferences(WallpaperScheduler.PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().remove("backgroundImagePath").commit();
             call.resolve();
             return;
         }
@@ -124,8 +118,8 @@ public class WallpaperPlugin extends Plugin {
                 fos.write(decodedBytes);
             }
 
-            SharedPreferences prefs = getContext().getSharedPreferences("HeatmapSettings", Context.MODE_PRIVATE);
-            prefs.edit().putString("backgroundImagePath", file.getAbsolutePath()).apply();
+            SharedPreferences prefs = getContext().getSharedPreferences(WallpaperScheduler.PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putString("backgroundImagePath", file.getAbsolutePath()).commit();
 
             JSObject result = new JSObject();
             result.put("path", file.getAbsolutePath());
@@ -172,8 +166,10 @@ public class WallpaperPlugin extends Plugin {
             return;
         }
 
-        // Save settings for background worker
-        saveSettings(call);
+        if (!saveSettings(call)) {
+            call.reject("Failed to save wallpaper settings.");
+            return;
+        }
 
         byte[] decodedBytes = Base64.decode(imageBase64, Base64.DEFAULT);
 
@@ -363,8 +359,8 @@ public class WallpaperPlugin extends Plugin {
         });
     }
 
-    private void saveSettings(PluginCall call) {
-        SharedPreferences prefs = getContext().getSharedPreferences("HeatmapSettings", Context.MODE_PRIVATE);
+    private boolean saveSettings(PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences(WallpaperScheduler.PREFS_NAME, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
 
         Activity activity = getActivity();
@@ -383,9 +379,23 @@ public class WallpaperPlugin extends Plugin {
 
         JSObject settings = call.getObject("settings");
         if (settings != null) {
+            String appMode = settings.getString("appMode", "push");
+            int refreshInterval = settings.getInteger("refreshInterval", 1440);
             editor.putString("bg", settings.getString("bg", "#001d35"));
             editor.putString("accent", settings.getString("accent", "#7cc0ff"));
             editor.putString("colors", settings.getString("colors", ""));
+            editor.putString("appMode", appMode);
+            editor.putString("viewType", settings.getString("viewType", "year"));
+            editor.putString("firstDayOfWeek", settings.getString("firstDayOfWeek", "auto"));
+            editor.putString("monthLabelType", settings.getString("monthLabelType", "abbr"));
+            editor.putString("countdownStart", settings.getString("countdownStart", ""));
+            editor.putString("countdownStartTime", settings.getString("countdownStartTime", "00:00"));
+            editor.putString("countdownEnd", settings.getString("countdownEnd", ""));
+            editor.putString("countdownEndTime", settings.getString("countdownEndTime", "00:00"));
+            editor.putInt("bgExposure", settings.getInteger("bgExposure", 60));
+            editor.putFloat("percentSize", (float) settings.optDouble("percentSize", 1.0));
+            editor.putInt("percentDecimals", settings.getInteger("percentDecimals", 4));
+            editor.putInt("refreshInterval", refreshInterval);
             editor.putInt("gridCols", settings.getInteger("gridCols", 4));
             editor.putFloat("offsetY", (float) settings.optDouble("offsetY", 0.0));
             editor.putBoolean("luckyMode", settings.getBoolean("luckyMode", false));
@@ -393,42 +403,19 @@ public class WallpaperPlugin extends Plugin {
             editor.putString("iconSize", settings.getString("iconSize", "compact"));
             editor.putString("shapeType", settings.getString("shapeType", "rounded-square"));
             editor.putBoolean("autoUpdateEnabled", settings.getBoolean("autoUpdateEnabled", false));
-            editor.apply();
+            JSONObject customDayColors = settings.optJSONObject("customDayColors");
+            editor.putString("customDayColors", customDayColors != null ? customDayColors.toString() : "{}");
+            editor.putLong("settingsUpdatedAt", System.currentTimeMillis());
+            boolean saved = editor.commit();
+            if (!saved) return false;
 
             if (settings.getBoolean("autoUpdateEnabled", false)) {
-                scheduleWallpaperUpdate();
+                WallpaperScheduler.schedule(getContext(), appMode, refreshInterval, true);
             } else {
-                WorkManager.getInstance(getContext()).cancelUniqueWork("DailyWallpaperUpdate");
+                WallpaperScheduler.cancel(getContext());
             }
         }
-    }
-
-    private void scheduleWallpaperUpdate() {
-        OneTimeWorkRequest immediateWork = new OneTimeWorkRequest.Builder(WallpaperWorker.class).build();
-        WorkManager.getInstance(getContext()).enqueueUniqueWork(
-                "ImmediateWallpaperUpdate",
-                ExistingWorkPolicy.REPLACE,
-                immediateWork
-        );
-
-        Calendar nextMidnight = Calendar.getInstance();
-        nextMidnight.add(Calendar.DAY_OF_YEAR, 1);
-        nextMidnight.set(Calendar.HOUR_OF_DAY, 0);
-        nextMidnight.set(Calendar.MINUTE, 0);
-        nextMidnight.set(Calendar.SECOND, 0);
-        nextMidnight.set(Calendar.MILLISECOND, 0);
-
-        long delay = nextMidnight.getTimeInMillis() - System.currentTimeMillis();
-
-        PeriodicWorkRequest workRequest = new PeriodicWorkRequest.Builder(WallpaperWorker.class, 24, TimeUnit.HOURS)
-                .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-                .build();
-
-        WorkManager.getInstance(getContext()).enqueueUniquePeriodicWork(
-                "DailyWallpaperUpdate",
-                ExistingPeriodicWorkPolicy.REPLACE,
-                workRequest
-        );
+        return true;
     }
 
     @PluginMethod
