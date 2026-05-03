@@ -1,5 +1,14 @@
 import React, { useRef, useEffect } from 'react';
 import { THEMES, ViewType, ShapeType, MonthLabelType, FONTS, LifeValueMode, IconSize, AppMode, FirstDayOfWeek } from '../constants';
+import {
+  ABBR_MONTH_LABELS,
+  FULL_MONTH_LABELS,
+  getCountdownDayColor,
+  getDateKey,
+  getDayColor,
+  getStartDayOffset,
+  parseLocalDateTime,
+} from '../rendering/wallpaperPlan';
 
 interface HeatmapCanvasProps {
   appMode: AppMode;
@@ -34,21 +43,6 @@ interface HeatmapCanvasProps {
   percentSize?: number;
   percentDecimals?: number;
 }
-
-const getSystemFirstDayOfWeek = () => {
-  // Fallback for 'auto' mode, trying to guess from browser/locale.
-  try {
-    if (Intl && (Intl as any).Locale) {
-      const locale = new (Intl as any).Locale(navigator.language);
-      if (locale.weekInfo && locale.weekInfo.firstDay !== undefined) {
-        const fd = locale.weekInfo.firstDay;
-        return fd === 7 ? 0 : fd; // JS uses 0 for Sunday
-      }
-    }
-  } catch (e) {}
-  // Default fallback: US uses Sunday (0), most of the world uses Monday (1)
-  return /en-US/i.test(navigator.language) ? 0 : 1;
-};
 
 const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
   appMode, countdownStart, countdownStartTime, countdownEnd, countdownEndTime, viewType, themeId, birthDate, lifeValueMode, customLifeValue, monthLabelType, monthFont, firstDayOfWeek, gridCols, shapeType, iconSize, resWidth, resHeight, customTheme, offsetY, customDayColors, customBottomText, luckyMode, bgImage, bgExposure, percentSize, percentDecimals
@@ -100,12 +94,6 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
   const renderSeparatedHeatmap = (ctx: CanvasRenderingContext2D, width: number, height: number, theme: any, t: number) => {
     const now = new Date();
     const year = now.getFullYear();
-    const fullMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const abbrMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-    let sysFirstDay = firstDayOfWeek === 'sunday' ? 0 : 1;
-    if (firstDayOfWeek === 'auto') sysFirstDay = getSystemFirstDayOfWeek();
-
     const cols = Math.max(3, Math.min(4, gridCols));
     const rows = Math.ceil(12 / cols);
 
@@ -147,7 +135,7 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
       const startY = cardMarginY + paddingY + rowIndex * (blockHeight + rowGap);
 
       if (monthLabelType !== 'none') {
-        const label = monthLabelType === 'abbr' ? abbrMonths[mIndex] : fullMonths[mIndex];
+        const label = monthLabelType === 'abbr' ? ABBR_MONTH_LABELS[mIndex] : FULL_MONTH_LABELS[mIndex];
         ctx.fillStyle = 'rgba(255,255,255,0.9)';
         ctx.font = `bold ${labelFontSize}px ${fontConfig.family}`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -157,7 +145,7 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
       const gridStartY = startY + labelHeight + effectiveLabelGap;
       const firstDayOfMonth = new Date(year, mIndex, 1);
       const daysInMonth = new Date(year, mIndex + 1, 0).getDate();
-      const startDayOffset = (firstDayOfMonth.getDay() - sysFirstDay + 7) % 7;
+      const startDayOffset = getStartDayOffset(firstDayOfMonth, firstDayOfWeek);
 
       for (let d = 0; d < daysInMonth; d++) {
         const dayPos = d + startDayOffset;
@@ -165,22 +153,8 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
         const y = gridStartY + Math.floor(dayPos / 7) * (cellSize + cellGap);
 
         const date = new Date(year, mIndex, d + 1);
-        const dateKey = `${year}-${String(mIndex+1).padStart(2,'0')}-${String(d+1).padStart(2,'0')}`;
-
-        let color = 'rgba(255,255,255,0.15)';
-        if (customDayColors && customDayColors[dateKey]) color = customDayColors[dateKey];
-        else if (date.toDateString() === now.toDateString()) color = theme?.accent || '#34D399';
-        else if (date < now) {
-          if (t < 3.0 && luckyMode) {
-             const random1 = Math.abs(Math.sin(date.getTime() + t * 50) * 10000) % 1;
-             color = `hsl(${Math.floor(random1 * 360)}, 80%, 65%)`;
-          } else {
-             const seed = date.getTime();
-             const random1 = Math.abs(Math.sin(seed) * 10000) % 1;
-             const safeColors = theme?.colors || ['#34D399', '#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F59E0B'];
-             color = luckyMode ? `hsl(${Math.floor(random1 * 360)}, 80%, 65%)` : (safeColors[Math.floor(random1 * 4) + 2] || safeColors[safeColors.length-1]);
-          }
-        }
+        const dateKey = getDateKey(year, mIndex, d + 1);
+        const color = getDayColor({ date, dateKey, now, theme, luckyMode, customDayColors });
 
         const delay = (mIndex * 30 + d) / 400; // Left-to-right top-to-bottom wave
         const progress = Math.max(0, Math.min(1, (t - delay) / 0.5));
@@ -193,9 +167,6 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
   const renderMergedHeatmap = (ctx: CanvasRenderingContext2D, width: number, height: number, theme: any, t: number) => {
     const now = new Date();
     const year = now.getFullYear();
-
-    let sysFirstDay = firstDayOfWeek === 'sunday' ? 0 : 1;
-    if (firstDayOfWeek === 'auto') sysFirstDay = getSystemFirstDayOfWeek();
 
     const mc = Math.max(3, Math.min(4, gridCols));
     const mr = Math.ceil(12 / mc);
@@ -236,7 +207,7 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
 
       const firstDayOfMonth = new Date(year, mIndex, 1);
       const daysInMonth = new Date(year, mIndex + 1, 0).getDate();
-      const startDayOffset = (firstDayOfMonth.getDay() - sysFirstDay + 7) % 7;
+      const startDayOffset = getStartDayOffset(firstDayOfMonth, firstDayOfWeek);
 
       for (let d = 0; d < daysInMonth; d++) {
         const dayPos = d + startDayOffset;
@@ -250,22 +221,8 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
         const y = startY + globalRow * (cellSize + cellGap);
 
         const date = new Date(year, mIndex, d + 1);
-        const dateKey = `${year}-${String(mIndex+1).padStart(2,'0')}-${String(d+1).padStart(2,'0')}`;
-
-        let color = 'rgba(255,255,255,0.15)';
-        if (customDayColors && customDayColors[dateKey]) color = customDayColors[dateKey];
-        else if (date.toDateString() === now.toDateString()) color = theme?.accent || '#34D399';
-        else if (date < now) {
-          if (t < 3.0 && luckyMode) {
-             const random1 = Math.abs(Math.sin(date.getTime() + t * 50) * 10000) % 1;
-             color = `hsl(${Math.floor(random1 * 360)}, 80%, 65%)`;
-          } else {
-             const seed = date.getTime();
-             const random1 = Math.abs(Math.sin(seed) * 10000) % 1;
-             const safeColors = theme?.colors || ['#34D399', '#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F59E0B'];
-             color = luckyMode ? `hsl(${Math.floor(random1 * 360)}, 80%, 65%)` : (safeColors[Math.floor(random1 * 4) + 2] || safeColors[safeColors.length-1]);
-          }
-        }
+        const dateKey = getDateKey(year, mIndex, d + 1);
+        const color = getDayColor({ date, dateKey, now, theme, luckyMode, customDayColors });
 
         const delay = (mIndex * 30 + d) / 400; // Left-to-right top-to-bottom wave
         const progress = Math.max(0, Math.min(1, (t - delay) / 0.5));
@@ -276,14 +233,8 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
   };
 
   const renderCountdownHeatmap = (ctx: CanvasRenderingContext2D, width: number, height: number, theme: any, t: number) => {
-    const parseDateTime = (dStr: string, tStr: string) => {
-       const [y, m, day] = dStr.split('-').map(Number);
-       const [h, min] = tStr.split(':').map(Number);
-       return new Date(y, m - 1, day, h, min, 0, 0);
-    };
-
-    const start = parseDateTime(countdownStart, countdownStartTime || '00:00');
-    const end = parseDateTime(countdownEnd, countdownEndTime || '00:00');
+    const start = parseLocalDateTime(countdownStart, countdownStartTime || '00:00');
+    const end = parseLocalDateTime(countdownEnd, countdownEndTime || '00:00');
     const now = new Date();
 
     const startStart = start.getTime();
@@ -342,19 +293,7 @@ const HeatmapCanvas: React.FC<HeatmapCanvasProps> = ({
       const x = startX + col * (maxCellSize + cellGap);
       const y = startY + row * (maxCellSize + cellGap);
 
-      let color = 'rgba(255,255,255,0.15)';
-      if (d === passedDays && nowTime <= endStart && nowTime >= startStart) {
-        color = theme.accent || '#34D399';
-      } else if (d < passedDays) {
-        if (t < 3.0 && luckyMode) {
-             const random1 = Math.abs(Math.sin(d + startStart + t * 50) * 10000) % 1;
-             color = `hsl(${Math.floor(random1 * 360)}, 80%, 65%)`;
-        } else {
-             const random1 = Math.abs(Math.sin(d + startStart) * 10000) % 1;
-             const safeColors = theme?.colors || ['#34D399', '#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F59E0B'];
-             color = luckyMode ? `hsl(${Math.floor(random1 * 360)}, 80%, 65%)` : (safeColors[Math.floor(random1 * 4) + 2] || safeColors[safeColors.length-1]);
-        }
-      }
+      const color = getCountdownDayColor(d, passedDays, d === passedDays && nowTime <= endStart && nowTime >= startStart, startStart, theme, luckyMode);
 
       const delay = (d / totalDays) * 0.8;
       const progress = Math.max(0, Math.min(1, (t - delay) / 0.5));

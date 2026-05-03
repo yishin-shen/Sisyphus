@@ -8,13 +8,26 @@ export interface WallpaperPlugin {
       bg: string,
       accent: string,
       colors: string,
+      appMode: string,
+      viewType: string,
+      firstDayOfWeek: string,
+      monthLabelType: string,
+      countdownStart: string,
+      countdownStartTime: string,
+      countdownEnd: string,
+      countdownEndTime: string,
+      bgExposure: number,
+      percentSize: number,
+      percentDecimals: number,
+      refreshInterval: number,
       gridCols: number,
       offsetY: number,
       luckyMode: boolean,
       customBottomText: string,
       iconSize: string,
       shapeType: string,
-      autoUpdateEnabled: boolean
+      autoUpdateEnabled: boolean,
+      customDayColors?: Record<string, string>
     }
   }): Promise<{ success: boolean }>;
   saveToGallery(options: { imageBase64: string }): Promise<{ success: boolean }>;

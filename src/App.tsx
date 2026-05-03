@@ -82,31 +82,55 @@ const ColorWheel = ({ color, onChange }: { color: string, onChange: (hex: string
   );
 };
 
+const APPLIED_SETTINGS_KEY = 'sisyphus_applied_settings';
+const LEGACY_SETTINGS_KEY = 'sisyphus_settings';
+const APP_VERSION = __APP_VERSION__;
+
 const DEFAULT_SETTINGS: AppSettings = {
   appMode: 'push', countdownStart: new Date().toISOString().split('T')[0], countdownStartTime: '00:00', countdownEnd: new Date(new Date().getFullYear() + 1, 0, 1).toISOString().split('T')[0], countdownEndTime: '00:00',
   bgExposure: 60, percentSize: 1.0, percentDecimals: 4, percentOffsetY: 0, refreshInterval: 60,
-  viewType: 'year', themeId: 'm3-blue', monthLabelType: 'abbr', monthFont: 'Share Tech Mono',
+  viewType: 'year', themeId: 'capri-blue', monthLabelType: 'abbr', monthFont: 'Share Tech Mono',
   firstDayOfWeek: 'auto',
   gridCols: 4, shapeType: 'rounded-square', iconSize: 'compact', resWidth: 1080, resHeight: 2400,
-  language: 'zh', offsetY: 0, customDayColors: {}, customBottomText: '🪨', luckyMode: false, autoUpdateEnabled: false,
+  language: 'zh', offsetY: 0, customDayColors: {}, customBottomText: '🪨', luckyMode: false, autoUpdateEnabled: true,
   birthDate: '2000-01-01', lifeValueMode: 'custom', customLifeValue: 80
 };
 
-const loadSafeSettings = (): AppSettings => {
+const normalizeSettings = (settings: Partial<AppSettings> | null | undefined): AppSettings => ({
+  ...DEFAULT_SETTINGS,
+  ...(settings || {}),
+  customDayColors: settings?.customDayColors || {},
+});
+
+const loadAppliedSettings = (): AppSettings => {
   try {
-    const saved = localStorage.getItem('sisyphus_settings');
+    const saved = localStorage.getItem(APPLIED_SETTINGS_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
-      return { ...DEFAULT_SETTINGS, ...parsed, customDayColors: parsed.customDayColors || {} };
+      return normalizeSettings(JSON.parse(saved));
+    }
+
+    const legacy = localStorage.getItem(LEGACY_SETTINGS_KEY);
+    if (legacy) {
+      const migrated = normalizeSettings(JSON.parse(legacy));
+      localStorage.setItem(APPLIED_SETTINGS_KEY, JSON.stringify(migrated));
+      localStorage.removeItem(LEGACY_SETTINGS_KEY);
+      return migrated;
     }
   } catch (e) {
-    localStorage.removeItem('sisyphus_settings');
+    localStorage.removeItem(APPLIED_SETTINGS_KEY);
   }
   return DEFAULT_SETTINGS;
 };
 
+const saveAppliedSettings = (settings: AppSettings) => {
+  localStorage.setItem(APPLIED_SETTINGS_KEY, JSON.stringify(settings));
+  localStorage.removeItem(LEGACY_SETTINGS_KEY);
+};
+
 export default function App() {
-  const [settings, setSettings] = useState<AppSettings>(loadSafeSettings());
+  const [settings, setSettings] = useState<AppSettings>(loadAppliedSettings);
+  const lastAppliedSettings = useRef<AppSettings>(settings);
+  const wasHidden = useRef(false);
   const [activeTab, setActiveTab] = useState<'grid' | 'color' | 'text' | 'setup'>('grid');
   const [isApplying, setIsApplying] = useState(false);
   const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]);
@@ -168,9 +192,31 @@ export default function App() {
   };
 
   useEffect(() => {
-    localStorage.setItem('sisyphus_settings', JSON.stringify(settings));
     localStorage.setItem('sisyphus_recent_colors', JSON.stringify(recentColors));
-  }, [settings, recentColors]);
+  }, [recentColors]);
+
+  useEffect(() => {
+    const restoreAppliedDraft = () => {
+      const applied = loadAppliedSettings();
+      lastAppliedSettings.current = applied;
+      setSettings(applied);
+      setActiveTab('grid');
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        wasHidden.current = true;
+        return;
+      }
+      if (wasHidden.current) {
+        wasHidden.current = false;
+        restoreAppliedDraft();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   const t = TRANSLATIONS[settings.language || 'zh'];
   const currentTheme = settings.themeId === 'custom' && settings.customTheme ? settings.customTheme : THEMES.find(th => th.id === settings.themeId) || THEMES[0];
@@ -237,9 +283,6 @@ export default function App() {
     reader.onload = async (event) => {
       const dataUrl = event.target?.result as string;
       setSettings(s => ({ ...s, bgImage: dataUrl }));
-      if (Capacitor.getPlatform() === 'android') {
-        try { await Wallpaper.setBackgroundImage({ imageBase64: dataUrl.split(',')[1] }); } catch (e) { console.error(e); }
-      }
     };
     reader.readAsDataURL(file);
   };
@@ -259,13 +302,22 @@ export default function App() {
   const handleApply = async () => {
     setIsApplying(true);
     try {
+      const appliedSettings: AppSettings = { ...settings, autoUpdateEnabled: true };
       if (Capacitor.getPlatform() === 'android') {
+        if (appliedSettings.bgImage) {
+          await Wallpaper.setBackgroundImage({ imageBase64: appliedSettings.bgImage.split(',')[1] });
+        } else {
+          await Wallpaper.setBackgroundImage({ imageBase64: null });
+        }
         const base64 = await getCanvasData();
         await Wallpaper.setLockScreenWallpaper({
           imageBase64: base64,
-          settings: { ...settings, bg: currentTheme.bg, accent: currentTheme.accent, colors: currentTheme.colors.join(',') } as any
+          settings: { ...appliedSettings, bg: currentTheme.bg, accent: currentTheme.accent, colors: currentTheme.colors.join(',') } as any
         });
       }
+      saveAppliedSettings(appliedSettings);
+      lastAppliedSettings.current = appliedSettings;
+      setSettings(appliedSettings);
     } catch(e) { console.error(e); alert('Apply failed'); }
     finally { setIsApplying(false); }
   };
@@ -545,7 +597,6 @@ export default function App() {
                     <img src={settings.bgImage} className="w-full h-full object-cover opacity-60" />
                     <button onClick={() => {
                       setSettings(s => ({ ...s, bgImage: undefined }));
-                      if (Capacitor.getPlatform() === 'android') Wallpaper.setBackgroundImage({ imageBase64: null });
                     }} className="absolute top-2 right-2 bg-red-500/90 hover:bg-red-500 p-2 rounded-xl text-white shadow-xl transition-transform active:scale-95"><Trash2 size={16}/></button>
                   </div>
                 )}
@@ -690,7 +741,7 @@ export default function App() {
               <div className="bg-black/20 p-5 rounded-3xl border border-white/5 space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{t.setup.version || 'Version'}</span>
-                  <span className="text-xs font-mono font-bold text-zinc-300">1.0.0</span>
+                  <span className="text-xs font-mono font-bold text-zinc-300">{APP_VERSION}</span>
                 </div>
                 <div className="flex justify-between items-center pt-4 border-t border-white/5">
                   <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{t.setup.github || 'GitHub'}</span>

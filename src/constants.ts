@@ -104,6 +104,7 @@ export interface AppSettings {
     accent: string;
     colors: string[];
   };
+  bgImage?: string;
   offsetY: number;
   customDayColors: Record<string, string>;
   customBottomText: string;
