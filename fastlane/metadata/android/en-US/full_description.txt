@@ -1,0 +1,22 @@
+Sisyphus is a quiet, privacy-first wallpaper app that turns time into a minimalist heatmap.
+
+It can render two kinds of wallpapers:
+
+* PUSH: a yearly calendar heatmap where every past day leaves a visible trace.
+* DOWN: a life or project countdown view where time remaining becomes a field of fading blocks.
+
+The app is designed to be restrained and local. It does not require network access, does not include ads, does not include analytics, and does not transmit your settings or generated wallpapers anywhere.
+
+Features:
+
+* Generate high-resolution heatmap wallpapers for your screen.
+* Customize colors, layout density, block shape, background image, bottom text, and week start day.
+* Highlight special dates with custom colors.
+* Use Android dynamic colors or extract a palette from an image.
+* Refresh the wallpaper automatically in the background.
+* Restore the background update schedule after device reboot.
+* Export generated wallpapers to your gallery.
+
+All configuration is stored on your device. The wallpaper is generated locally with the Web preview and Android background renderer kept under the same rendering contract.
+
+License: GPL-3.0

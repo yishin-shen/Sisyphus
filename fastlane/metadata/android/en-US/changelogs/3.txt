@@ -1,0 +1,5 @@
+Version 1.2.0:
+
+* Prepared release metadata and signing documentation for open-source Android app stores.
+* Added Fastlane screenshots, localized descriptions, and IzzyOnDroid release notes.
+* Cleaned release configuration so Android version names are read from the package version.

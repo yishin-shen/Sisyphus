@@ -1,0 +1,8 @@
+Version 1.1.0:
+
+* Added applied-settings behavior: drafts are discarded when returning to the app unless Set Wallpaper is used.
+* Enabled automatic background updates after setting a wallpaper.
+* Fixed stale WorkManager jobs overriding newer wallpaper settings.
+* Restored update scheduling after device reboot.
+* Removed INTERNET permission and aligned privacy behavior.
+* Added rendering contract checks for preview/background consistency.
